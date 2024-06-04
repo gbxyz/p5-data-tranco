@@ -33,30 +33,49 @@ $STATIC     = undef;
     use Data::Tranco;
 
     # get a random domain from the list
-    $domain = Data::Tranco->random_domain;
+    ($domain, $rank) = Data::Tranco->random_domain;
 
-    # get a random domain from the list with a specific suffix
-    $domain = Data::Tranco->random_domain("org");
+    # get a random domain from .org
+    ($domain, $rank) = Data::Tranco->random_domain("org");
 
     # get the highest ranking domain
-    $domain = Data::Tranco->top_domain;
+    ($domain, $rank) = Data::Tranco->top_domain;
 
-    # get the highest ranking domain from the list with a specific suffix
-    $domain = Data::Tranco->top_domain("co.uk");
+    # get the highest ranking domain in .co.uk
+    ($domain, $rank) = Data::Tranco->top_domain("co.uk");
+
+    # get a sample of 50 domains
+    @domains = Data::Tranco->sample(50);
+
+    # get a sample of 50 domains in .org
+    @domains = Data::Tranco->top_domains(50, "org");
+
+    # get all 1,000,000 domains
+    @all = Data::Tranco->all;
+
+    # get all domains in .org
+    @all = Data::Tranco->all("org");
+
+    # get the top 50 domains in .jp
+    @domains = Data::Tranco->top_domains(50, "jp");
+
+    # get the ranking of perl.org
+    $rank = Data::Tranco->rank("perl.org");
 
 =head1 DESCRIPTION
 
-L<Data::Tranco> provides an interface to the L<Tranco|https://tranco-list.eu>
+C<Data::Tranco> provides an interface to the L<Tranco|https://tranco-list.eu>
 list of popular domain names.
 
 =head1 METHODS
 
 =head2 RANDOM DOMAIN
 
-    $domain = Data::Tranco->random_domain($suffix);
+    ($domain, $rank) = Data::Tranco->random_domain($suffix);
 
-Returns a randomly-selected domain from the list. If C<$suffix> is specified,
-then only a domain that ends with that suffix will be returned.
+Returns a randomly-selected domain from the list, along with its ranking.
+If C<$suffix> is specified, then only a domain that ends with that suffix will
+be returned.
 
 =cut
 
@@ -78,10 +97,11 @@ sub random_domain {
 
 =head2 TOP DOMAIN
 
-    $domain = Data::Tranco->top_domain($suffix);
+    ($domain, $rank) = Data::Tranco->top_domain($suffix);
 
-Returns the highest-ranking domain from the list. If C<$suffix> is specified,
-then the highest-ranking domain that ends with that suffix will be returned.
+Returns the highest-ranking domain from the list, along with its ranking. If
+C<$suffix> is specified, then the highest-ranking domain that ends with that
+suffix will be returned.
 
 =cut
 
@@ -101,34 +121,135 @@ sub top_domain {
 
 =pod
 
-=head1 IMPLEMENTATION
+=head2 SAMPLE
 
-The Tranco list is published as a zip-compressed CSV file. By default,
-L<Data::Tranco> will automatically download that file, extract the CSV file,
-and write it to an L<SQLite|DBD::SQLite> database if (a) the file doesn't exist
-yet or (b) it's more than a day old.
+    @domains = Data::Tranco->sample($count, $suffix);
 
-If you want to control this behaviour, you can use the following:
-
-=head2 C<$Data::Tranco::TTL>
-
-This is how old the local file can be (in seconds) before it is updated. It is
-86400 seconds by default.
-
-=head2 C<$Data::Tranco::STATIC>
-
-If you set this value to C<1> then L<Data::Tranco> will not update the database.
-
-=head2 C<Data::Tranco-E<gt>update_db>
-
-This will force an update to the database.
+Returns an array containing C<$count> randomly-selected domains. If C<$suffix> is
+specified, only domains ending with that suffix will be returned.
 
 =cut
 
-#
-# returns a DBI object connected to the SQLite database. If the database
-# is too old, it will try to update it.
-#
+sub sample {
+    my ($package, $count, $suffix) = @_;
+
+    state $sth = $package->get_db->prepare(q{
+        SELECT `domain` FROM `domains`
+        WHERE `domain` LIKE ?
+        ORDER BY RANDOM()
+        LIMIT 0,?});
+
+    $sth->execute($suffix ? '%.'.$suffix : '%', int($count));
+
+    my @domains;
+
+    while (my @row = $sth->fetchrow_array) {
+        push(@domains, @row);
+    }
+
+    return @domains;
+}
+
+=pod
+
+=head2 TOP N DOMAINS
+
+    @domains = Net::Tranco->top_domains($count, $suffix);
+
+Returns an array of the highest ranking C<$count> domains. If C<$suffix> is
+specified, only domains ending with that suffix will be returned. The number of
+entries in the array may be less than C<$count> if the TLD is small and/or
+C<$count> is high.
+
+=cut
+
+sub top_domains {
+    my ($package, $count, $suffix) = @_;
+
+    state $sth = $package->get_db->prepare(q{
+        SELECT `domain` FROM `domains`
+        WHERE `domain` LIKE ?
+        ORDER BY `id`
+        LIMIT 0,?});
+
+    $sth->execute($suffix ? '%.'.$suffix : '%', int($count));
+
+    my @domains;
+
+    while (my @row = $sth->fetchrow_array) {
+        push(@domains, @row);
+    }
+
+    return @domains;
+}
+
+=pod
+
+=head2 ALL DOMAINS
+
+    @domains = Net::Tranco->all($suffix);
+
+Returns an array of all domains. If C<$suffix> is specified, only domains ending
+with that suffix will be returned, otherwise, you'll get all 1M domains!
+
+=cut
+
+sub all {
+    my ($package, $suffix) = @_;
+
+    state $sth = $package->get_db->prepare(q{
+        SELECT `domain` FROM `domains`
+        WHERE `domain` LIKE ?
+        ORDER BY `id`});
+
+    $sth->execute($suffix ? '%.'.$suffix : '%');
+
+    my @domains;
+
+    while (my @row = $sth->fetchrow_array) {
+        push(@domains, @row);
+    }
+
+    return @domains;
+}
+
+=pod
+
+=head1 DOMAIN RANK
+
+    $rank = Net::Tranco->rank($domain);
+
+Returns the ranking of the domain C<$domain> or C<undef> if the domain isn't
+present in the list.
+
+=cut
+
+sub rank {
+    my ($package, $domain) = @_;
+
+    state $sth = $package->get_db->prepare(q{
+        SELECT `id`
+        FROM `domains`
+        WHERE (`domain`=?)
+    });
+
+    $sth->execute($domain);
+
+    return $sth->fetchrow_array;
+}
+
+=pod
+
+=head1 DATABASE HANDLE
+
+    $db = Data::Tranco->get_db;
+
+Returns a L<DBI> object so you can perform your own queries. The database
+contains a single table called `domains`, which has the `id` and `domain`
+columns containing the ranking and domain name, respectively.
+
+=cut
+
 sub get_db {
     my $package = shift;
 
@@ -142,6 +263,34 @@ sub get_db {
 
     return $db;
 }
+
+=pod
+
+=head1 IMPLEMENTATION
+
+The Tranco list is published as a zip-compressed CSV file. By default,
+C<Data::Tranco> will automatically download that file, extract the CSV file,
+and write it to an L<SQLite|DBD::SQLite> database if (a) the file doesn't exist
+yet or (b) it's more than a day old.
+
+If you want to control this behaviour, you can use the following:
+
+=head2 C<$Data::Tranco::TTL>
+
+This is how old the local file can be (in seconds) before it is updated. It is
+86400 seconds by default.
+
+=head2 C<$Data::Tranco::STATIC>
+
+If you set this value to C<1> then C<Data::Tranco> will not update the database,
+even if it doesn't exist, in which case, all the methods above will fail.
+
+=head2 C<Data::Tranco-E<gt>update_db>
+
+This will cause C<Data::Tranco> to update its database. If it fails it will
+C<croak()>, so calls to this method should be wrapped in an `eval`.
+
+=cut
 
 #
 # returns true if the database needs updating, that is:
