@@ -6,7 +6,6 @@ use Carp;
 use DBD::SQLite;
 use DBI;
 use Data::Mirror qw(mirror_file);
-use Digest::SHA qw(sha256_hex);
 use File::Basename qw(basename dirname);
 use File::Spec;
 use File::stat;
