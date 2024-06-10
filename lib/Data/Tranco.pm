@@ -20,7 +20,7 @@ use vars qw($TTL $ZIPFILE $DBFILE $DSN $STATIC);
 use warnings;
 
 $TTL        = 86400;
-$ZIPFILE    = Data::Mirror::filename(TRANCO_URL);
+$ZIPFILE    = mirror_file(TRANCO_URL);
 $DBFILE     = File::Spec->catfile(dirname($ZIPFILE), basename($ZIPFILE, '.zip').'.db');
 $DSN        = 'dbi:SQLite:dbname='.$DBFILE;
 $STATIC     = undef;
