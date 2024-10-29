@@ -1,5 +1,6 @@
 #!/usr/bin/perl
 use Test::More;
+use LWP::Online qw(offline);
 use strict;
 use constant {
     TTL         => 31536000, # one year
@@ -11,6 +12,11 @@ use vars qw(@random @top @sample @all);
 use warnings;
 
 require_ok('Data::Tranco');
+
+if (offline) {
+    done_testing;
+    exit;
+}
 
 $Data::Tranco::TTL = TTL;
 
